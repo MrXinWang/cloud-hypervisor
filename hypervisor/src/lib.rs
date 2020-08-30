@@ -20,7 +20,6 @@
 
 #[macro_use]
 extern crate anyhow;
-#[macro_use]
 extern crate log;
 extern crate serde;
 extern crate serde_derive;
