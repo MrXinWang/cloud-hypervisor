@@ -7,6 +7,7 @@
 
 //! Emulates virtual and hardware devices.
 extern crate anyhow;
+extern crate arch;
 #[macro_use]
 extern crate bitflags;
 extern crate byteorder;

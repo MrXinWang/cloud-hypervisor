@@ -25,6 +25,12 @@ pub enum Error {
     UpdateInterrupt(io::Error),
     /// Failed enabling the interrupt.
     EnableInterrupt(io::Error),
+    /// Error in saving AArch64 interrupt controller registers.
+    #[cfg(target_arch = "aarch64")]
+    SaveRegisters(&'static str, arch::aarch64::gic::Error),
+    /// Error in restoring AArch64 interrupt controller registers.
+    #[cfg(target_arch = "aarch64")]
+    RestoreRegisters(&'static str, arch::aarch64::gic::Error),
 }
 
 type Result<T> = result::Result<T, Error>;
