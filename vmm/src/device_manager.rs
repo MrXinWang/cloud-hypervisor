@@ -1146,6 +1146,15 @@ impl DeviceManager {
     }
 
     #[cfg(target_arch = "aarch64")]
+    pub fn set_gic_device_entity(&self, device_entity: &Arc<dyn hypervisor::Device>) {
+        self.interrupt_controller
+            .as_ref()
+            .unwrap()
+            .lock()
+            .unwrap()
+            .set_device_entity(device_entity);
+    }
+    #[cfg(target_arch = "aarch64")]
     pub fn enable_interrupt_controller(&self) -> DeviceManagerResult<()> {
         if let Some(interrupt_controller) = &self.interrupt_controller {
             interrupt_controller.lock().unwrap().enable().unwrap();

@@ -673,7 +673,10 @@ impl Vm {
             None
         };
 
-        arch::configure_system(
+        // Call `configure_system` and pass the GIC devices out, so that
+        // we can register the GIC device to the device manager and the
+        // `device_tree`.
+        let gic_device = arch::configure_system(
             &self.memory_manager.lock().as_ref().unwrap().vm,
             &mem,
             &cmdline_cstring,
@@ -684,6 +687,12 @@ impl Vm {
             &pci_space,
         )
         .map_err(Error::ConfigureSystem)?;
+
+        // Update the GIC entry in the device_tree
+        self.device_manager
+            .lock()
+            .unwrap()
+            .set_gic_device_entity(gic_device.device());
 
         self.device_manager
             .lock()

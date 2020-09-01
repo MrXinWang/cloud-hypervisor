@@ -24,6 +24,7 @@ pub const IRQ_SPI_OFFSET: usize = 32;
 //   1. Move Gic*.rs from arch/ folder here.
 //   2. Move this file and ioapic.rs to arch/, as they are architecture specific.
 pub struct Gic {
+    device_entity: Option<Arc<dyn hypervisor::Device>>,
     interrupt_source_group: Arc<Box<dyn InterruptSourceGroup>>,
 }
 
@@ -40,8 +41,13 @@ impl Gic {
             .map_err(Error::CreateInterruptSourceGroup)?;
 
         Ok(Gic {
+            device_entity: None,
             interrupt_source_group,
         })
+    }
+
+    pub fn set_device_entity(&mut self, device_entity: &Arc<dyn hypervisor::Device>) {
+        self.device_entity = Some(Arc::clone(device_entity));
     }
 }
 
