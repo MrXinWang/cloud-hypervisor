@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
 
 use super::interrupt_controller::{Error, InterruptController};
+use std::convert::TryInto;
 use std::result;
 use std::sync::Arc;
 use vm_device::interrupt::{
@@ -25,12 +26,14 @@ pub const IRQ_SPI_OFFSET: usize = 32;
 //   2. Move this file and ioapic.rs to arch/, as they are architecture specific.
 pub struct Gic {
     device_entity: Option<Arc<dyn hypervisor::Device>>,
+    // Vector holding values of GICR_TYPER for each vCPU
+    gicr_typers: Vec<u64>,
     interrupt_source_group: Arc<Box<dyn InterruptSourceGroup>>,
 }
 
 impl Gic {
     pub fn new(
-        _vcpu_count: u8,
+        vcpu_count: u8,
         interrupt_manager: Arc<dyn InterruptManager<GroupConfig = MsiIrqGroupConfig>>,
     ) -> Result<Gic> {
         let interrupt_source_group = interrupt_manager
@@ -42,12 +45,17 @@ impl Gic {
 
         Ok(Gic {
             device_entity: None,
+            gicr_typers: vec![0; vcpu_count.try_into().unwrap()],
             interrupt_source_group,
         })
     }
 
     pub fn set_device_entity(&mut self, device_entity: &Arc<dyn hypervisor::Device>) {
         self.device_entity = Some(Arc::clone(device_entity));
+    }
+
+    pub fn set_gicr_typers(&mut self, gicr_typers: Vec<u64>) {
+        self.gicr_typers = gicr_typers;
     }
 }
 

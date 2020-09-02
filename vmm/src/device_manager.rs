@@ -46,6 +46,8 @@ use hypervisor::kvm_ioctls;
 use hypervisor::kvm_ioctls::*;
 #[cfg(feature = "mmio_support")]
 use hypervisor::vm::DataMatch;
+#[cfg(target_arch = "aarch64")]
+use hypervisor::CpuState;
 use libc::TIOCGWINSZ;
 use libc::{MAP_NORESERVE, MAP_PRIVATE, MAP_SHARED, O_TMPFILE, PROT_READ, PROT_WRITE};
 #[cfg(feature = "pci_support")]
@@ -1154,6 +1156,44 @@ impl DeviceManager {
             .unwrap()
             .set_device_entity(device_entity);
     }
+
+    #[cfg(target_arch = "aarch64")]
+    pub fn construct_gicr_typers(&self, vcpu_states: &Vec<CpuState>) {
+        /* Pre-construct the GICR_TYPER:
+         * For our implementation:
+         *  Top 32 bits are the affinity value of the associated CPU
+         *  CommonLPIAff == 01 (redistributors with same Aff3 share LPI table)
+         *  Processor_Number == CPU index starting from 0
+         *  DPGS == 0 (GICR_CTLR.DPG* not supported)
+         *  Last == 1 if this is the last redistributor in a series of
+         *            contiguous redistributor pages
+         *  DirectLPI == 0 (direct injection of LPIs not supported)
+         *  VLPIS == 0 (virtual LPIs not supported)
+         *  PLPIS == 0 (physical LPIs not supported)
+         */
+        let mut gicr_typers: Vec<u64> = Vec::new();
+        for (index, state) in vcpu_states.iter().enumerate() {
+            let last = {
+                if index == vcpu_states.len() - 1 {
+                    1
+                } else {
+                    0
+                }
+            };
+            //calculate affinity
+            let mut cpu_affid = state.mpidr & 1095233437695;
+            cpu_affid = ((cpu_affid & 0xFF00000000) >> 8) | (cpu_affid & 0xFFFFFF);
+            gicr_typers.push((cpu_affid << 32) | (1 << 24) | (index as u64) << 8 | (last << 4));
+        }
+
+        self.interrupt_controller
+            .as_ref()
+            .unwrap()
+            .lock()
+            .unwrap()
+            .set_gicr_typers(gicr_typers);
+    }
+
     #[cfg(target_arch = "aarch64")]
     pub fn enable_interrupt_controller(&self) -> DeviceManagerResult<()> {
         if let Some(interrupt_controller) = &self.interrupt_controller {

@@ -312,6 +312,12 @@ impl Vcpu {
         self.mpidr
     }
 
+    /// Gets the saved vCPU state.
+    #[cfg(target_arch = "aarch64")]
+    pub fn get_saved_state(&self) -> Option<CpuState> {
+        self.saved_state.clone()
+    }
+
     /// Runs the VCPU until it exits, returning the reason.
     ///
     /// Note that the state of the VCPU and associated VM must be setup first for this to do
@@ -984,6 +990,14 @@ impl CpuManager {
         self.vcpus
             .iter()
             .map(|cpu| cpu.lock().unwrap().get_mpidr())
+            .collect()
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    pub fn get_saved_states(&self) -> Vec<CpuState> {
+        self.vcpus
+            .iter()
+            .map(|cpu| cpu.lock().unwrap().get_saved_state().unwrap())
             .collect()
     }
 
