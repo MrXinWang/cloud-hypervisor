@@ -1395,22 +1395,13 @@ impl Snapshottable for CpuManager {
     }
 
     fn restore(&mut self, snapshot: Snapshot) -> std::result::Result<(), MigratableError> {
-        let vcpu_thread_barrier = Arc::new(Barrier::new((snapshot.snapshots.len() + 1) as usize));
-
-        // Restore the vCPUs in "paused" state.
-        self.vcpus_pause_signalled.store(true, Ordering::SeqCst);
-
         for (cpu_id, snapshot) in snapshot.snapshots.iter() {
             debug!("Restoring VCPU {}", cpu_id);
             let vcpu = self
                 .create_vcpu(cpu_id.parse::<u8>().unwrap(), None, Some(*snapshot.clone()))
                 .map_err(|e| MigratableError::Restore(anyhow!("Could not create vCPU {:?}", e)))?;
-            self.start_vcpu(vcpu, vcpu_thread_barrier.clone(), false)
-                .map_err(|e| MigratableError::Restore(anyhow!("Could not restore vCPU {:?}", e)))?;
         }
 
-        // Unblock all restored CPU threads.
-        vcpu_thread_barrier.wait();
         Ok(())
     }
 }

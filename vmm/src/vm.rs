@@ -1299,6 +1299,16 @@ impl Snapshottable for Vm {
 
         vm_snapshot.add_snapshot(self.cpu_manager.lock().unwrap().snapshot()?);
         vm_snapshot.add_snapshot(self.memory_manager.lock().unwrap().snapshot()?);
+
+        #[cfg(target_arch = "aarch64")]
+        {
+            let saved_vcpu_states = self.cpu_manager.lock().unwrap().get_saved_states();
+            self.device_manager
+                .lock()
+                .unwrap()
+                .construct_gicr_typers(&saved_vcpu_states);
+        }
+
         vm_snapshot.add_snapshot(self.device_manager.lock().unwrap().snapshot()?);
         vm_snapshot.add_data_section(SnapshotDataSection {
             id: format!("{}-section", VM_SNAPSHOT_ID),
@@ -1328,6 +1338,32 @@ impl Snapshottable for Vm {
             )));
         }
 
+        // Create all previously saved vCPUs, but we do not start them here.
+        // This is because for AArch64, we need to create vCPUs first before creating GIC.
+        if let Some(cpu_manager_snapshot) = snapshot.snapshots.get(CPU_MANAGER_SNAPSHOT_ID) {
+            self.cpu_manager
+                .lock()
+                .unwrap()
+                .restore(*cpu_manager_snapshot.clone())?;
+        } else {
+            return Err(MigratableError::Restore(anyhow!(
+                "Missing CPU manager snapshot"
+            )));
+        }
+
+        // Here we prepare the GICR_TYPER registers from the restored vCPU states.
+        #[cfg(target_arch = "aarch64")]
+        {
+            let saved_vcpu_states = self.cpu_manager.lock().unwrap().get_saved_states();
+            self.device_manager
+                .lock()
+                .unwrap()
+                .construct_gicr_typers(&saved_vcpu_states);
+        }
+
+        /* !!!!! Add code for creating GIC here, as the GIC will not be created in restoring the
+         * device manager !!!!!*/
+
         if let Some(device_manager_snapshot) = snapshot.snapshots.get(DEVICE_MANAGER_SNAPSHOT_ID) {
             self.device_manager
                 .lock()
@@ -1339,16 +1375,17 @@ impl Snapshottable for Vm {
             )));
         }
 
-        if let Some(cpu_manager_snapshot) = snapshot.snapshots.get(CPU_MANAGER_SNAPSHOT_ID) {
-            self.cpu_manager
-                .lock()
-                .unwrap()
-                .restore(*cpu_manager_snapshot.clone())?;
-        } else {
-            return Err(MigratableError::Restore(anyhow!(
-                "Missing CPU manager snapshot"
-            )));
+        // Now we can start all vCPUs from here.
+        let vcpu_thread_barrier = Arc::new(Barrier::new((self.vcpus.len() + 1) as usize));
+        // Restore the vCPUs in "paused" state.
+        self.vcpus_pause_signalled.store(true, Ordering::SeqCst);
+
+        for vcpu in self.vcpus.iter() {
+            self.start_vcpu(vcpu, vcpu_thread_barrier.clone(), false)
+                .map_err(|e| MigratableError::Restore(anyhow!("Could not start vCPU {:?}", e)))?;
         }
+        // Unblock all restored CPU threads.
+        vcpu_thread_barrier.wait();
 
         if self
             .device_manager
