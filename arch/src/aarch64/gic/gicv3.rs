@@ -145,6 +145,10 @@ pub mod kvm {
             &self.device
         }
 
+        fn its_device(&self) -> Option<&Arc<dyn hypervisor::Device>> {
+            None
+        }
+
         fn fdt_compatibility(&self) -> &str {
             "arm,gic-v3"
         }
@@ -176,11 +180,12 @@ pub mod kvm {
         }
 
         fn create_device(
-            device: Arc<dyn hypervisor::Device>,
+            gic_v3_device: Option<Arc<dyn hypervisor::Device>>,
+            _gic_v3_its_device: Option<Arc<dyn hypervisor::Device>>,
             vcpu_count: u64,
         ) -> Box<dyn GICDevice> {
             Box::new(KvmGICv3 {
-                device,
+                device: gic_v3_device.unwrap(),
                 gicr_typers: vec![0; vcpu_count.try_into().unwrap()],
                 properties: [
                     KvmGICv3::get_dist_addr(),
@@ -192,10 +197,7 @@ pub mod kvm {
             })
         }
 
-        fn init_device_attributes(
-            _vm: &Arc<dyn hypervisor::Vm>,
-            gic_device: &dyn GICDevice,
-        ) -> crate::aarch64::gic::Result<()> {
+        fn init_device_attributes(gic_device: &dyn GICDevice) -> crate::aarch64::gic::Result<()> {
             /* Setting up the distributor attribute.
              We are placing the GIC below 1GB so we need to substract the size of the distributor.
             */
@@ -219,6 +221,19 @@ pub mod kvm {
             )?;
 
             Ok(())
+        }
+
+        fn new(
+            vm: &Arc<dyn hypervisor::Vm>,
+            vcpu_count: u64,
+        ) -> crate::aarch64::gic::Result<Box<dyn GICDevice>> {
+            let vgic_v3_device = Self::init_device(vm)?;
+            let vgic_v3_device_obj = Self::create_device(Some(vgic_v3_device), None, vcpu_count);
+
+            Self::init_device_attributes(&*vgic_v3_device_obj)?;
+            Self::finalize_device(&*vgic_v3_device_obj)?;
+
+            Ok(vgic_v3_device_obj)
         }
     }
 
