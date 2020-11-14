@@ -79,7 +79,7 @@ use vmm_sys_util::eventfd::EventFd;
 use vmm_sys_util::terminal::Terminal;
 
 #[cfg(target_arch = "aarch64")]
-use arch::aarch64::gic::gicv3::kvm::{KvmGICv3, GIC_V3_SNAPSHOT_ID};
+use arch::aarch64::gic::gicv3_its::kvm::{KvmGICv3ITS, GIC_V3_ITS_SNAPSHOT_ID};
 #[cfg(target_arch = "aarch64")]
 use arch::aarch64::gic::kvm::create_gic;
 
@@ -1537,7 +1537,7 @@ impl Vm {
                 .lock()
                 .unwrap()
                 .as_any_concrete_mut()
-                .downcast_mut::<KvmGICv3>()
+                .downcast_mut::<KvmGICv3ITS>()
                 .unwrap()
                 .snapshot()?,
         );
@@ -1574,7 +1574,7 @@ impl Vm {
             .construct_gicr_typers(&saved_vcpu_states);
 
         // Restore GIC states.
-        if let Some(gic_v3_snapshot) = vm_snapshot.snapshots.get(GIC_V3_SNAPSHOT_ID) {
+        if let Some(gic_v3_its_snapshot) = vm_snapshot.snapshots.get(GIC_V3_ITS_SNAPSHOT_ID) {
             self.device_manager
                 .lock()
                 .unwrap()
@@ -1583,11 +1583,13 @@ impl Vm {
                 .lock()
                 .unwrap()
                 .as_any_concrete_mut()
-                .downcast_mut::<KvmGICv3>()
+                .downcast_mut::<KvmGICv3ITS>()
                 .unwrap()
-                .restore(*gic_v3_snapshot.clone())?;
+                .restore(*gic_v3_its_snapshot.clone())?;
         } else {
-            return Err(MigratableError::Restore(anyhow!("Missing GICv3 snapshot")));
+            return Err(MigratableError::Restore(anyhow!(
+                "Missing GICv3ITS snapshot"
+            )));
         }
 
         self.device_manager

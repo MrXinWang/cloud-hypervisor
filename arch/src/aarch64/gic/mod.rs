@@ -5,6 +5,7 @@ pub mod dist_regs;
 pub mod gicv3;
 pub mod gicv3_its;
 pub mod icc_regs;
+pub mod its_regs;
 pub mod redist_regs;
 
 pub use self::dist_regs::{get_dist_regs, read_ctlr, set_dist_regs, write_ctlr};
