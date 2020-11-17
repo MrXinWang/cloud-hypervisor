@@ -148,6 +148,7 @@ pub mod kvm {
 
             // Save GICv3ITS registers
             let its_baser_state: [u64; 8] = [0; 8];
+            debug!("=====SAVE: its_baser_state before get={:#?}=====", its_baser_state);
             for i in 0..8 {
                 gic_v3_its_attr_access_64(
                     &self.its_device().unwrap(),
@@ -158,9 +159,10 @@ pub mod kvm {
                 )
                 .map_err(Error::SaveITSBASER)?;
             }
+            debug!("=====SAVE: its_baser_state after get={:#?}=====", its_baser_state);
 
             let its_ctlr_state: u32 = 0;
-            debug!("=====its_ctlr_state before get={:#?}=====", its_ctlr_state);
+            debug!("=====SAVE: its_ctlr_state before get={:#?}=====", its_ctlr_state);
 
             gic_v3_its_attr_access_32(
                 &self.its_device().unwrap(),
@@ -170,9 +172,10 @@ pub mod kvm {
                 false,
             )
             .map_err(Error::SaveITSCTLR)?;
-            debug!("=====its_ctlr_state after get={:#?}=====", its_ctlr_state);
+            debug!("=====SAVE: its_ctlr_state after get={:#?}=====", its_ctlr_state);
 
             let its_cbaser_state: u64 = 0;
+            debug!("=====SAVE: its_cbaser_state before get={:#?}=====", its_cbaser_state);
             gic_v3_its_attr_access_64(
                 &self.its_device().unwrap(),
                 kvm_bindings::KVM_DEV_ARM_VGIC_GRP_ITS_REGS,
@@ -181,8 +184,10 @@ pub mod kvm {
                 false,
             )
             .map_err(Error::SaveITSCBASER)?;
+            debug!("=====SAVE: its_cbaser_state after get={:#?}=====", its_cbaser_state);
 
             let its_creadr_state: u64 = 0;
+            debug!("=====SAVE: its_creadr_state before get={:#?}=====", its_creadr_state);
             gic_v3_its_attr_access_64(
                 &self.its_device().unwrap(),
                 kvm_bindings::KVM_DEV_ARM_VGIC_GRP_ITS_REGS,
@@ -191,8 +196,10 @@ pub mod kvm {
                 false,
             )
             .map_err(Error::SaveITSCREADR)?;
+            debug!("=====SAVE: its_creadr_state after get={:#?}=====", its_creadr_state);
 
             let its_cwriter_state: u64 = 0;
+            debug!("=====SAVE: its_cwriter_state before get={:#?}=====", its_cwriter_state);
             gic_v3_its_attr_access_64(
                 &self.its_device().unwrap(),
                 kvm_bindings::KVM_DEV_ARM_VGIC_GRP_ITS_REGS,
@@ -201,8 +208,10 @@ pub mod kvm {
                 false,
             )
             .map_err(Error::SaveITSCWRITER)?;
+            debug!("=====SAVE: its_cwriter_state after get={:#?}=====", its_cwriter_state);
 
             let its_iidr_state: u32 = 0;
+            debug!("=====SAVE: its_iidr_state before get={:#?}=====", its_iidr_state);
             gic_v3_its_attr_access_32(
                 &self.its_device().unwrap(),
                 kvm_bindings::KVM_DEV_ARM_VGIC_GRP_ITS_REGS,
@@ -211,6 +220,7 @@ pub mod kvm {
                 false,
             )
             .map_err(Error::SaveITSIIDR)?;
+            debug!("=====SAVE: its_iidr_state before get={:#?}=====", its_iidr_state);
 
             Ok(Gicv3ITSState {
                 dist: dist_state,
@@ -241,6 +251,7 @@ pub mod kvm {
                 .map_err(Error::RestoreICCRegisters)?;
 
             //Restore GICv3ITS registers
+            debug!("=====RESTORE: its_iidr_state={:#?}=====", &state.its_iidr);
             gic_v3_its_attr_access_32(
                 &self.its_device().unwrap(),
                 kvm_bindings::KVM_DEV_ARM_VGIC_GRP_ITS_REGS,
@@ -250,6 +261,7 @@ pub mod kvm {
             )
             .map_err(Error::RestoreITSIIDR)?;
 
+            debug!("=====RESTORE: its_cbaser_state={:#?}=====", &state.its_cbaser);
             gic_v3_its_attr_access_64(
                 &self.its_device().unwrap(),
                 kvm_bindings::KVM_DEV_ARM_VGIC_GRP_ITS_REGS,
@@ -259,6 +271,7 @@ pub mod kvm {
             )
             .map_err(Error::RestoreITSCBASER)?;
 
+            debug!("=====RESTORE: its_creadr_state={:#?}=====", &state.its_creadr);
             gic_v3_its_attr_access_64(
                 &self.its_device().unwrap(),
                 kvm_bindings::KVM_DEV_ARM_VGIC_GRP_ITS_REGS,
@@ -268,6 +281,7 @@ pub mod kvm {
             )
             .map_err(Error::RestoreITSCREADR)?;
 
+            debug!("=====RESTORE: its_cwriter_state={:#?}=====", &state.its_cwriter);
             gic_v3_its_attr_access_64(
                 &self.its_device().unwrap(),
                 kvm_bindings::KVM_DEV_ARM_VGIC_GRP_ITS_REGS,
@@ -277,6 +291,7 @@ pub mod kvm {
             )
             .map_err(Error::RestoreITSCWRITER)?;
 
+            debug!("=====RESTORE: its_baser_state={:#?}=====", &state.its_baser);
             for i in 0..8 {
                 gic_v3_its_attr_access_64(
                     &self.its_device().unwrap(),
@@ -297,6 +312,7 @@ pub mod kvm {
             )
             .map_err(Error::RestoreITSRestoreTables)?;
 
+            debug!("=====RESTORE: its_ctlr_state={:#?}=====", &state.its_ctlr);
             gic_v3_its_attr_access_32(
                 &self.its_device().unwrap(),
                 kvm_bindings::KVM_DEV_ARM_VGIC_GRP_ITS_REGS,

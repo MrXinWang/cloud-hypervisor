@@ -1573,6 +1573,7 @@ impl Vm {
             .unwrap()
             .construct_gicr_typers(&saved_vcpu_states);
 
+      /* 
         // Restore GIC states.
         if let Some(gic_v3_its_snapshot) = vm_snapshot.snapshots.get(GIC_V3_ITS_SNAPSHOT_ID) {
             self.device_manager
@@ -1591,7 +1592,6 @@ impl Vm {
                 "Missing GICv3ITS snapshot"
             )));
         }
-
         self.device_manager
             .lock()
             .unwrap()
@@ -1602,7 +1602,7 @@ impl Vm {
                     e
                 ))
             })?;
-
+        */
         Ok(())
     }
 
@@ -1814,7 +1814,11 @@ impl Snapshottable for Vm {
                 "Missing CPU manager snapshot"
             )));
         }
-
+        
+        #[cfg(target_arch = "aarch64")]
+        self.restore_vgic_and_enable_interrupt(&snapshot)?;
+        
+        debug!("=====start restoring the device manager=====");
         if let Some(device_manager_snapshot) = snapshot.snapshots.get(DEVICE_MANAGER_SNAPSHOT_ID) {
             self.device_manager
                 .lock()
@@ -1825,10 +1829,39 @@ impl Snapshottable for Vm {
                 "Missing device manager snapshot"
             )));
         }
+        debug!("=====end restoring the device manager=====");
 
-        #[cfg(target_arch = "aarch64")]
-        self.restore_vgic_and_enable_interrupt(&snapshot)?;
+        // Restore GIC states.
+        if let Some(gic_v3_its_snapshot) = snapshot.snapshots.get(GIC_V3_ITS_SNAPSHOT_ID) {
+            self.device_manager
+                .lock()
+                .unwrap()
+                .get_gic_device_entity()
+                .unwrap()
+                .lock()
+                .unwrap()
+                .as_any_concrete_mut()
+                .downcast_mut::<KvmGICv3ITS>()
+                .unwrap()
+                .restore(*gic_v3_its_snapshot.clone())?;
+        } else {
+            return Err(MigratableError::Restore(anyhow!(
+                "Missing GICv3ITS snapshot"
+            )));
+        }
 
+         self.device_manager
+            .lock()
+            .unwrap()
+            .enable_interrupt_controller()
+            .map_err(|e| {
+                MigratableError::Restore(anyhow!(
+                    "Could not enable interrupt controller routing: {:#?}",
+                    e
+                ))
+            })?;
+
+        
         // Now we can start all vCPUs from here.
         self.cpu_manager
             .lock()
@@ -1838,6 +1871,7 @@ impl Snapshottable for Vm {
                 MigratableError::Restore(anyhow!("Cannot start restored vCPUs: {:#?}", e))
             })?;
 
+        debug!("=====Before starting console=====");
         if self
             .device_manager
             .lock()
@@ -1845,10 +1879,12 @@ impl Snapshottable for Vm {
             .console()
             .input_enabled()
         {
+            debug!("=====1=====");
             let console = self.device_manager.lock().unwrap().console().clone();
             let signals = Signals::new(&[SIGWINCH, SIGINT, SIGTERM]);
             match signals {
                 Ok(signals) => {
+                    debug!("=====2=====");
                     self.signals = Some(signals.clone());
 
                     let on_tty = self.on_tty;
@@ -1888,8 +1924,10 @@ impl Snapshottable for Vm {
                 }
                 Err(e) => error!("Signal not found {}", e),
             }
-
+            
+            debug!("=====3=====");
             if self.on_tty {
+                debug!("=====4=====");
                 io::stdin().lock().set_raw_mode().map_err(|e| {
                     MigratableError::Restore(anyhow!(
                         "Could not set terminal in raw mode: {:#?}",
@@ -1904,6 +1942,7 @@ impl Snapshottable for Vm {
             .try_write()
             .map_err(|e| MigratableError::Restore(anyhow!("Could not set VM state: {:#?}", e)))?;
         *state = new_state;
+        debug!("=====5=====");
         Ok(())
     }
 }
