@@ -80,11 +80,15 @@ use vmm_sys_util::eventfd::EventFd;
 use vmm_sys_util::terminal::Terminal;
 
 #[cfg(target_arch = "aarch64")]
+use crate::vm::arch::aarch64::gic::kvm::KvmGICDevice;
+#[cfg(target_arch = "aarch64")]
 use arch::aarch64::gic::gicv3::kvm::{KvmGICv3, GIC_V3_SNAPSHOT_ID};
 #[cfg(target_arch = "aarch64")]
 use arch::aarch64::gic::gicv3_its::kvm::{KvmGICv3ITS, GIC_V3_ITS_SNAPSHOT_ID};
 #[cfg(target_arch = "aarch64")]
 use arch::aarch64::gic::kvm::create_gic;
+#[cfg(target_arch = "aarch64")]
+use arch::aarch64::gic::GICDevice;
 
 // 64 bit direct boot entry offset for bzImage
 #[cfg(target_arch = "x86_64")]
@@ -1604,8 +1608,8 @@ impl Vm {
     }
 
     #[cfg(target_arch = "aarch64")]
-    /// Restore the vGIC from the VM snapshot and enable the interrupt controller routing.
-    fn restore_vgic_and_enable_interrupt(
+    /// Create GICv3, GICv3ITS and restore their states from the VM snapshot.
+    fn create_and_restore_gic(
         &self,
         vm_snapshot: &Snapshot,
     ) -> std::result::Result<(), MigratableError> {
@@ -1614,8 +1618,7 @@ impl Vm {
         let vcpu_numbers = saved_vcpu_states.len();
 
         // Creating a GIC device here, as the GIC will not be created when
-        // restoring the device manager. Note that currently only the bare GICv3
-        // without ITS is supported.
+        // restoring the device manager.
         let (gicv3_device, gicv3_its_device) =
             create_gic(&self.vm, vcpu_numbers.try_into().unwrap())
                 .map_err(|e| MigratableError::Restore(anyhow!("Could not create GIC: {:#?}", e)))?;
@@ -1638,8 +1641,80 @@ impl Vm {
             .unwrap()
             .construct_gicr_typers(&saved_vcpu_states);
 
-        // Restore GIC states.
-        if let Some(gic_v3_snapshot) = vm_snapshot.snapshots.get(GIC_V3_SNAPSHOT_ID) {
+        KvmGICv3::init_device_attributes(
+            self.device_manager
+                .lock()
+                .unwrap()
+                .get_gicv3_device_entity()
+                .unwrap()
+                .lock()
+                .unwrap()
+                .as_any_concrete_mut()
+                .downcast_mut::<KvmGICv3>()
+                .unwrap(),
+        )
+        .map_err(|e| {
+            MigratableError::Restore(anyhow!("Failed to init GICv3 attributes {:?}", e))
+        })?;
+
+        KvmGICv3ITS::init_device_attributes(
+            self.device_manager
+                .lock()
+                .unwrap()
+                .get_gicv3_its_device_entity()
+                .unwrap()
+                .lock()
+                .unwrap()
+                .as_any_concrete_mut()
+                .downcast_mut::<KvmGICv3ITS>()
+                .unwrap(),
+        )
+        .map_err(|e| {
+            MigratableError::Restore(anyhow!("Failed to init GICv3ITS attributes {:?}", e))
+        })?;
+
+        KvmGICv3ITS::finalize_device(
+            self.device_manager
+                .lock()
+                .unwrap()
+                .get_gicv3_its_device_entity()
+                .unwrap()
+                .lock()
+                .unwrap()
+                .as_any_concrete_mut()
+                .downcast_mut::<KvmGICv3ITS>()
+                .unwrap(),
+        )
+        .map_err(|e| MigratableError::Restore(anyhow!("Failed to finalize GICv3ITS {:?}", e)))?;
+
+        KvmGICv3::finalize_device(
+            self.device_manager
+                .lock()
+                .unwrap()
+                .get_gicv3_device_entity()
+                .unwrap()
+                .lock()
+                .unwrap()
+                .as_any_concrete_mut()
+                .downcast_mut::<KvmGICv3>()
+                .unwrap(),
+        )
+        .map_err(|e| MigratableError::Restore(anyhow!("Failed to finalize GICv3 {:?}", e)))?;
+
+        if let Some(device_manager_snapshot) = vm_snapshot.snapshots.get(DEVICE_MANAGER_SNAPSHOT_ID)
+        {
+            self.device_manager
+                .lock()
+                .unwrap()
+                .restore_devices(*device_manager_snapshot.clone())?;
+        } else {
+            return Err(MigratableError::Restore(anyhow!(
+                "Missing device manager snapshot"
+            )));
+        }
+
+        // Restore the GICv3 states.
+        if let Some(gicv3_snapshot) = vm_snapshot.snapshots.get(GIC_V3_SNAPSHOT_ID) {
             self.device_manager
                 .lock()
                 .unwrap()
@@ -1650,10 +1725,63 @@ impl Vm {
                 .as_any_concrete_mut()
                 .downcast_mut::<KvmGICv3>()
                 .unwrap()
-                .restore(*gic_v3_snapshot.clone())?;
+                .restore(*gicv3_snapshot.clone())?;
         } else {
             return Err(MigratableError::Restore(anyhow!("Missing GICv3 snapshot")));
         }
+
+        /*
+        KvmGICv3ITS::init_device_attributes(
+            self.device_manager
+                .lock()
+                .unwrap()
+                .get_gicv3_its_device_entity()
+                .unwrap()
+                .lock()
+                .unwrap()
+                .as_any_concrete_mut()
+                .downcast_mut::<KvmGICv3ITS>()
+                .unwrap(),
+        )
+        .map_err(|e| {
+            MigratableError::Restore(anyhow!("Failed to init GICv3ITS attributes {:?}", e))
+        })?;
+        */
+
+        // Restore the GICv3ITS states.
+        if let Some(gicv3_its_snapshot) = vm_snapshot.snapshots.get(GIC_V3_ITS_SNAPSHOT_ID) {
+            self.device_manager
+                .lock()
+                .unwrap()
+                .get_gicv3_its_device_entity()
+                .unwrap()
+                .lock()
+                .unwrap()
+                .as_any_concrete_mut()
+                .downcast_mut::<KvmGICv3ITS>()
+                .unwrap()
+                .restore(*gicv3_its_snapshot.clone())?;
+        } else {
+            return Err(MigratableError::Restore(anyhow!(
+                "Missing GICv3ITS snapshot"
+            )));
+        }
+
+        /*
+        KvmGICv3ITS::finalize_device(
+            self.device_manager
+                .lock()
+                .unwrap()
+                .get_gicv3_its_device_entity()
+                .unwrap()
+                .lock()
+                .unwrap()
+                .as_any_concrete_mut()
+                .downcast_mut::<KvmGICv3ITS>()
+                .unwrap(),
+        )
+        .map_err(|e| MigratableError::Restore(anyhow!("Failed to finalize GICv3ITS {:?}", e)))?;
+        */
 
         /*
         self.device_manager
@@ -1897,6 +2025,9 @@ impl Snapshottable for Vm {
             )));
         }
 
+        //#[cfg(target_arch = "aarch64")]
+        //self.create_gic_and_restore_gicv3(&snapshot)?;
+
         // Restore the device_manager
         if let Some(device_manager_snapshot) = snapshot.snapshots.get(DEVICE_MANAGER_SNAPSHOT_ID) {
             self.device_manager
@@ -1916,6 +2047,22 @@ impl Snapshottable for Vm {
             .create_devices()
             .map_err(|e| MigratableError::Restore(anyhow!("Could not create devices {:?}", e)))?;
 
+        #[cfg(target_arch = "aarch64")]
+        self.create_and_restore_gic(&snapshot)?;
+
+        /*
+        self.device_manager
+            .lock()
+            .unwrap()
+            .enable_interrupt_controller()
+            .map_err(|e| {
+                MigratableError::Restore(anyhow!(
+                    "Could not enable interrupt controller routing: {:#?}",
+                    e
+                ))
+            })?;
+        */
+        /*
         // Restore devices
         if let Some(device_manager_snapshot) = snapshot.snapshots.get(DEVICE_MANAGER_SNAPSHOT_ID) {
             self.device_manager
@@ -1927,9 +2074,111 @@ impl Snapshottable for Vm {
                 "Missing device manager snapshot"
             )));
         }
+        */
 
-        #[cfg(target_arch = "aarch64")]
-        self.restore_vgic_and_enable_interrupt(&snapshot)?;
+        /*
+                KvmGICv3ITS::init_device_attributes(
+                    self.device_manager
+                        .lock()
+                        .unwrap()
+                        .get_gicv3_its_device_entity()
+                        .unwrap()
+                        .lock()
+                        .unwrap()
+                        .as_any_concrete_mut()
+                        .downcast_mut::<KvmGICv3ITS>()
+                        .unwrap(),
+                )
+                .map_err(|e| {
+                    MigratableError::Restore(anyhow!("Failed to init GICv3ITS attributes {:?}", e))
+                })?;
+
+                // Restore the GICv3ITS states.
+                if let Some(gicv3_its_snapshot) = snapshot.snapshots.get(GIC_V3_ITS_SNAPSHOT_ID) {
+                    self.device_manager
+                        .lock()
+                        .unwrap()
+                        .get_gicv3_its_device_entity()
+                        .unwrap()
+                        .lock()
+                        .unwrap()
+                        .as_any_concrete_mut()
+                        .downcast_mut::<KvmGICv3ITS>()
+                        .unwrap()
+                        .restore(*gicv3_its_snapshot.clone())?;
+                } else {
+                    return Err(MigratableError::Restore(anyhow!(
+                        "Missing GICv3ITS snapshot"
+                    )));
+                }
+
+                KvmGICv3ITS::finalize_device(
+                    self.device_manager
+                        .lock()
+                        .unwrap()
+                        .get_gicv3_its_device_entity()
+                        .unwrap()
+                        .lock()
+                        .unwrap()
+                        .as_any_concrete_mut()
+                        .downcast_mut::<KvmGICv3ITS>()
+                        .unwrap(),
+                )
+                .map_err(|e| MigratableError::Restore(anyhow!("Failed to finalize GICv3ITS {:?}", e)))?;
+        */
+        /*
+         KvmGICv3::finalize_device(
+            self.device_manager
+                .lock()
+                .unwrap()
+                .get_gicv3_device_entity()
+                .unwrap()
+                .lock()
+                .unwrap()
+                .as_any_concrete_mut()
+                .downcast_mut::<KvmGICv3>()
+                .unwrap(),
+        )
+        .map_err(|e| MigratableError::Restore(anyhow!("Failed to finalize GICv3 {:?}", e)))?;
+        */
+
+        //#[cfg(target_arch = "aarch64")]
+        //self.create_and_restore_gic(&snapshot)?;
+
+        /*
+        KvmGICv3::init_device_attributes(&*gicv3_device).map_err(|e| {
+            MigratableError::Restore(anyhow!("Failed to init GICv3 attributes {:?}", e))
+        })?;
+        KvmGICv3ITS::init_device_attributes(&*gicv3_its_device).map_err(|e| {
+            MigratableError::Restore(anyhow!("Failed to init GICv3ITS attributes {:?}", e))
+        })?;
+
+        // Restore the GICv3 states.
+        if let Some(gicv3_its_snapshot) = snapshot.snapshots.get(GIC_V3_ITS_SNAPSHOT_ID) {
+            self.device_manager
+                .lock()
+                .unwrap()
+                .get_gicv3_its_device_entity()
+                .unwrap()
+                .lock()
+                .unwrap()
+                .as_any_concrete_mut()
+                .downcast_mut::<KvmGICv3ITS>()
+                .unwrap()
+                .restore(*gicv3_its_snapshot.clone())?;
+        } else {
+            return Err(MigratableError::Restore(anyhow!(
+                "Missing GICv3ITS snapshot"
+            )));
+        }
+
+        KvmGICv3ITS::finalize_device(&*gicv3_its_device).map_err(|e| {
+            MigratableError::Restore(anyhow!("Failed to finalize GICv3ITS {:?}", e))
+        })?;
+
+        KvmGICv3::finalize_device(&*gicv3_device)
+            .map_err(|e| MigratableError::Restore(anyhow!("Failed to finalize GICv3 {:?}", e)))?;
+        */
 
         self.device_manager
             .lock()
