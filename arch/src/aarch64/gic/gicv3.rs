@@ -1,3 +1,4 @@
+// Copyright 2020 Arm Limited (or its affiliates). All rights reserved.
 // Copyright 2019 Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
@@ -145,6 +146,10 @@ pub mod kvm {
             &self.device
         }
 
+        fn its_device(&self) -> Option<&Arc<dyn hypervisor::Device>> {
+            None
+        }
+
         fn fdt_compatibility(&self) -> &str {
             "arm,gic-v3"
         }
@@ -175,12 +180,13 @@ pub mod kvm {
             kvm_bindings::kvm_device_type_KVM_DEV_TYPE_ARM_VGIC_V3
         }
 
-        fn create_device(
-            device: Arc<dyn hypervisor::Device>,
+        fn create_device_object(
+            device: Option<Arc<dyn hypervisor::Device>>,
+            _its_device: Option<Arc<dyn hypervisor::Device>>,
             vcpu_count: u64,
         ) -> Box<dyn GICDevice> {
             Box::new(KvmGICv3 {
-                device,
+                device: device.unwrap(),
                 gicr_typers: vec![0; vcpu_count.try_into().unwrap()],
                 properties: [
                     KvmGICv3::get_dist_addr(),
@@ -193,14 +199,13 @@ pub mod kvm {
         }
 
         fn init_device_attributes(
-            _vm: &Arc<dyn hypervisor::Vm>,
-            gic_device: &dyn GICDevice,
+            gic_device_object: &dyn GICDevice,
         ) -> crate::aarch64::gic::Result<()> {
             /* Setting up the distributor attribute.
              We are placing the GIC below 1GB so we need to substract the size of the distributor.
             */
             Self::set_device_attribute(
-                gic_device.device(),
+                gic_device_object.device(),
                 kvm_bindings::KVM_DEV_ARM_VGIC_GRP_ADDR,
                 u64::from(kvm_bindings::KVM_VGIC_V3_ADDR_TYPE_DIST),
                 &KvmGICv3::get_dist_addr() as *const u64 as u64,
@@ -211,10 +216,38 @@ pub mod kvm {
             We are calculating here the start of the redistributors address. We have one per CPU.
             */
             Self::set_device_attribute(
-                gic_device.device(),
+                gic_device_object.device(),
                 kvm_bindings::KVM_DEV_ARM_VGIC_GRP_ADDR,
                 u64::from(kvm_bindings::KVM_VGIC_V3_ADDR_TYPE_REDIST),
-                &KvmGICv3::get_redists_addr(gic_device.vcpu_count()) as *const u64 as u64,
+                &KvmGICv3::get_redists_addr(gic_device_object.vcpu_count()) as *const u64 as u64,
+                0,
+            )?;
+
+            Ok(())
+        }
+
+        fn finalize_device(gic_device_object: &dyn GICDevice) -> crate::aarch64::gic::Result<()> {
+            /* We need to tell the kernel how many irqs to support with this vgic.
+             * See the `layout` module for details.
+             */
+            let nr_irqs: u32 = layout::IRQ_MAX - layout::IRQ_BASE + 1;
+            let nr_irqs_ptr = &nr_irqs as *const u32;
+            Self::set_device_attribute(
+                gic_device_object.device(),
+                kvm_bindings::KVM_DEV_ARM_VGIC_GRP_NR_IRQS,
+                0,
+                nr_irqs_ptr as u64,
+                0,
+            )?;
+
+            /* Finalize the GIC.
+             * See https://code.woboq.org/linux/linux/virt/kvm/arm/vgic/vgic-kvm-device.c.html#211.
+             */
+            Self::set_device_attribute(
+                gic_device_object.device(),
+                kvm_bindings::KVM_DEV_ARM_VGIC_GRP_CTRL,
+                u64::from(kvm_bindings::KVM_DEV_ARM_VGIC_CTRL_INIT),
+                0,
                 0,
             )?;
 

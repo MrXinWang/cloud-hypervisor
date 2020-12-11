@@ -1,3 +1,4 @@
+// Copyright 2020 Arm Limited (or its affiliates). All rights reserved.
 // Copyright 2019 Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
@@ -29,6 +30,9 @@ type Result<T> = result::Result<T, Error>;
 pub trait GICDevice: Send {
     /// Returns the hypervisor agnostic Device of the GIC device
     fn device(&self) -> &Arc<dyn hypervisor::Device>;
+
+    /// Returns the hypervisor agnostic Device of the GICITS device
+    fn its_device(&self) -> Option<&Arc<dyn hypervisor::Device>>;
 
     /// Returns the fdt compatibility property of the device
     fn fdt_compatibility(&self) -> &str;
@@ -67,8 +71,8 @@ pub trait GICDevice: Send {
 pub mod kvm {
     use super::GICDevice;
     use super::Result;
+    use crate::aarch64::gic::gicv3::kvm::KvmGICv3;
     use crate::aarch64::gic::gicv3_its::kvm::KvmGICv3ITS;
-    use crate::layout;
     use hypervisor::kvm::kvm_bindings;
     use std::boxed::Box;
     use std::sync::Arc;
@@ -79,16 +83,14 @@ pub mod kvm {
         fn version() -> u32;
 
         /// Create the GIC device object
-        fn create_device(
-            device: Arc<dyn hypervisor::Device>,
+        fn create_device_object(
+            device: Option<Arc<dyn hypervisor::Device>>,
+            its_device: Option<Arc<dyn hypervisor::Device>>,
             vcpu_count: u64,
         ) -> Box<dyn GICDevice>;
 
         /// Setup the device-specific attributes
-        fn init_device_attributes(
-            vm: &Arc<dyn hypervisor::Vm>,
-            gic_device: &dyn GICDevice,
-        ) -> Result<()>;
+        fn init_device_attributes(gic_device_object: &dyn GICDevice) -> Result<()>;
 
         /// Initialize a GIC device
         fn init_device(vm: &Arc<dyn hypervisor::Vm>) -> Result<Arc<dyn hypervisor::Device>> {
@@ -145,54 +147,35 @@ pub mod kvm {
         }
 
         /// Finalize the setup of a GIC device
-        fn finalize_device(gic_device: &dyn GICDevice) -> Result<()> {
-            /* We need to tell the kernel how many irqs to support with this vgic.
-             * See the `layout` module for details.
-             */
-            let nr_irqs: u32 = layout::IRQ_MAX - layout::IRQ_BASE + 1;
-            let nr_irqs_ptr = &nr_irqs as *const u32;
-            Self::set_device_attribute(
-                gic_device.device(),
-                kvm_bindings::KVM_DEV_ARM_VGIC_GRP_NR_IRQS,
-                0,
-                nr_irqs_ptr as u64,
-                0,
-            )?;
-
-            /* Finalize the GIC.
-             * See https://code.woboq.org/linux/linux/virt/kvm/arm/vgic/vgic-kvm-device.c.html#211.
-             */
-            Self::set_device_attribute(
-                gic_device.device(),
-                kvm_bindings::KVM_DEV_ARM_VGIC_GRP_CTRL,
-                u64::from(kvm_bindings::KVM_DEV_ARM_VGIC_CTRL_INIT),
-                0,
-                0,
-            )?;
-
-            Ok(())
-        }
-
-        /// Method to initialize the GIC device
-        #[allow(clippy::new_ret_no_self)]
-        fn new(vm: &Arc<dyn hypervisor::Vm>, vcpu_count: u64) -> Result<Box<dyn GICDevice>> {
-            let vgic_fd = Self::init_device(vm)?;
-
-            let device = Self::create_device(vgic_fd, vcpu_count);
-
-            Self::init_device_attributes(vm, &*device)?;
-
-            Self::finalize_device(&*device)?;
-
-            Ok(device)
-        }
+        fn finalize_device(gic_device_object: &dyn GICDevice) -> Result<()>;
     }
 
     /// Create a GICv3-ITS device.
     ///
-    pub fn create_gic(vm: &Arc<dyn hypervisor::Vm>, vcpu_count: u64) -> Result<Box<dyn GICDevice>> {
+    pub fn create_gic(
+        vm: &Arc<dyn hypervisor::Vm>,
+        vcpu_count: u64,
+    ) -> Result<(Box<dyn GICDevice>, Box<dyn GICDevice>)> {
+        debug!("creating a GICv3");
+        let gicv3_device = KvmGICv3::init_device(vm)?;
         debug!("creating a GICv3-ITS");
-        KvmGICv3ITS::new(vm, vcpu_count)
+        let gicv3_its_device = KvmGICv3ITS::init_device(vm)?;
+
+        let gicv3_device_obj =
+            KvmGICv3::create_device_object(Some(gicv3_device.clone()), None, vcpu_count);
+        let gicv3_its_device_obj = KvmGICv3ITS::create_device_object(
+            Some(gicv3_device.clone()),
+            Some(gicv3_its_device.clone()),
+            vcpu_count,
+        );
+
+        KvmGICv3::init_device_attributes(&*gicv3_device_obj)?;
+        KvmGICv3ITS::init_device_attributes(&*gicv3_its_device_obj)?;
+
+        KvmGICv3ITS::finalize_device(&*gicv3_its_device_obj)?;
+        KvmGICv3::finalize_device(&*gicv3_device_obj)?;
+
+        Ok((gicv3_device_obj, gicv3_its_device_obj))
     }
 
     /// Function that saves RDIST pending tables into guest RAM.

@@ -998,7 +998,7 @@ impl Vm {
 
         // Call `configure_system` and pass the GIC devices out, so that
         // we can register the GIC device to the device manager.
-        let gic_device = arch::configure_system(
+        let (gicv3_device, gicv3_its_device) = arch::configure_system(
             &self.memory_manager.lock().as_ref().unwrap().vm,
             &mem,
             &cmdline_cstring,
@@ -1010,11 +1010,17 @@ impl Vm {
         )
         .map_err(Error::ConfigureSystem)?;
 
-        // Update the GIC entity in device manager
+        // Update the GICv3 entity in device manager
         self.device_manager
             .lock()
             .unwrap()
-            .set_gic_device_entity(Arc::new(Mutex::new(gic_device)));
+            .set_gicv3_device_entity(Arc::new(Mutex::new(gicv3_device)));
+
+        // Update the GICv3ITS entity in device manager
+        self.device_manager
+            .lock()
+            .unwrap()
+            .set_gicv3_its_device_entity(Arc::new(Mutex::new(gicv3_its_device)));
 
         self.device_manager
             .lock()
@@ -1568,7 +1574,7 @@ impl Vm {
             self.device_manager
                 .lock()
                 .unwrap()
-                .get_gic_device_entity()
+                .get_gicv3_device_entity()
                 .unwrap()
                 .lock()
                 .unwrap()
@@ -1594,14 +1600,21 @@ impl Vm {
         // Creating a GIC device here, as the GIC will not be created when
         // restoring the device manager. Note that currently only the bare GICv3
         // without ITS is supported.
-        let gic_device = create_gic(&self.vm, vcpu_numbers.try_into().unwrap())
-            .map_err(|e| MigratableError::Restore(anyhow!("Could not create GIC: {:#?}", e)))?;
+        let (gicv3_device, gicv3_its_device) =
+            create_gic(&self.vm, vcpu_numbers.try_into().unwrap())
+                .map_err(|e| MigratableError::Restore(anyhow!("Could not create GIC: {:#?}", e)))?;
 
-        // Update the GIC entity in device manager
+        // Update the GICv3 entity in device manager
         self.device_manager
             .lock()
             .unwrap()
-            .set_gic_device_entity(Arc::new(Mutex::new(gic_device)));
+            .set_gicv3_device_entity(Arc::new(Mutex::new(gicv3_device)));
+
+        // Update the GICv3ITS entity in device manager
+        self.device_manager
+            .lock()
+            .unwrap()
+            .set_gicv3_its_device_entity(Arc::new(Mutex::new(gicv3_its_device)));
 
         // Here we prepare the GICR_TYPER registers from the restored vCPU states.
         self.device_manager
@@ -1614,7 +1627,7 @@ impl Vm {
             self.device_manager
                 .lock()
                 .unwrap()
-                .get_gic_device_entity()
+                .get_gicv3_device_entity()
                 .unwrap()
                 .lock()
                 .unwrap()

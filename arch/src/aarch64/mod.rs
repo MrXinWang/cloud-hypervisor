@@ -127,21 +127,22 @@ pub fn configure_system<T: DeviceInfoForFDT + Clone + Debug, S: ::std::hash::Bui
     device_info: &HashMap<(DeviceType, String), T, S>,
     initrd: &Option<super::InitramfsConfig>,
     pci_space_address: &(u64, u64),
-) -> super::Result<Box<dyn GICDevice>> {
-    let gic_device = gic::kvm::create_gic(vm, vcpu_count).map_err(Error::SetupGIC)?;
+) -> super::Result<(Box<dyn GICDevice>, Box<dyn GICDevice>)> {
+    let (gicv3_device, gicv3_its_device) =
+        gic::kvm::create_gic(vm, vcpu_count).map_err(Error::SetupGIC)?;
 
     fdt::create_fdt(
         guest_mem,
         cmdline_cstring,
         vcpu_mpidr,
         device_info,
-        &*gic_device,
+        &*gicv3_its_device,
         initrd,
         pci_space_address,
     )
     .map_err(Error::SetupFDT)?;
 
-    Ok(gic_device)
+    Ok((gicv3_device, gicv3_its_device))
 }
 
 /// Returns the memory address where the initramfs could be loaded.

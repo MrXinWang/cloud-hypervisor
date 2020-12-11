@@ -1,4 +1,4 @@
-// Copyright 2020 ARM Limited
+// Copyright 2020 Arm Limited (or its affiliates). All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 pub mod kvm {
@@ -13,8 +13,11 @@ pub mod kvm {
     use hypervisor::kvm::kvm_bindings;
 
     pub struct KvmGICv3ITS {
-        /// The hypervisor agnostic device
-        device: Arc<dyn hypervisor::Device>,
+        /// The hypervisor agnostic device for GICv3
+        gicv3_device: Arc<dyn hypervisor::Device>,
+
+        /// The hypervisor agnostic device for GICv3ITS
+        gicv3_its_device: Arc<dyn hypervisor::Device>,
 
         /// Vector holding values of GICR_TYPER for each vCPU
         gicr_typers: Vec<u64>,
@@ -43,7 +46,11 @@ pub mod kvm {
 
     impl GICDevice for KvmGICv3ITS {
         fn device(&self) -> &Arc<dyn hypervisor::Device> {
-            &self.device
+            &self.gicv3_device
+        }
+
+        fn its_device(&self) -> Option<&Arc<dyn hypervisor::Device>> {
+            Some(&self.gicv3_its_device)
         }
 
         fn fdt_compatibility(&self) -> &str {
@@ -85,15 +92,17 @@ pub mod kvm {
 
     impl KvmGICDevice for KvmGICv3ITS {
         fn version() -> u32 {
-            KvmGICv3::version()
+            kvm_bindings::kvm_device_type_KVM_DEV_TYPE_ARM_VGIC_ITS
         }
 
-        fn create_device(
-            device: Arc<dyn hypervisor::Device>,
+        fn create_device_object(
+            device: Option<Arc<dyn hypervisor::Device>>,
+            its_device: Option<Arc<dyn hypervisor::Device>>,
             vcpu_count: u64,
         ) -> Box<dyn GICDevice> {
             Box::new(KvmGICv3ITS {
-                device,
+                gicv3_device: device.unwrap(),
+                gicv3_its_device: its_device.unwrap(),
                 gicr_typers: vec![0; vcpu_count.try_into().unwrap()],
                 gic_properties: [
                     KvmGICv3::get_dist_addr(),
@@ -109,32 +118,21 @@ pub mod kvm {
             })
         }
 
-        fn init_device_attributes(
-            vm: &Arc<dyn hypervisor::Vm>,
-            gic_device: &dyn GICDevice,
-        ) -> Result<()> {
-            KvmGICv3::init_device_attributes(vm, gic_device)?;
-
-            let mut its_device = kvm_bindings::kvm_create_device {
-                type_: kvm_bindings::kvm_device_type_KVM_DEV_TYPE_ARM_VGIC_ITS,
-                fd: 0,
-                flags: 0,
-            };
-
-            let its_fd = vm
-                .create_device(&mut its_device)
-                .map_err(Error::CreateGIC)?;
-
+        fn init_device_attributes(gic_device_object: &dyn GICDevice) -> Result<()> {
             Self::set_device_attribute(
-                &its_fd,
+                gic_device_object.its_device().unwrap(),
                 kvm_bindings::KVM_DEV_ARM_VGIC_GRP_ADDR,
                 u64::from(kvm_bindings::KVM_VGIC_ITS_ADDR_TYPE),
-                &KvmGICv3ITS::get_msi_addr(gic_device.vcpu_count()) as *const u64 as u64,
+                &KvmGICv3ITS::get_msi_addr(gic_device_object.vcpu_count()) as *const u64 as u64,
                 0,
             )?;
 
+            Ok(())
+        }
+
+        fn finalize_device(gic_device_object: &dyn GICDevice) -> Result<()> {
             Self::set_device_attribute(
-                &its_fd,
+                gic_device_object.its_device().unwrap(),
                 kvm_bindings::KVM_DEV_ARM_VGIC_GRP_CTRL,
                 u64::from(kvm_bindings::KVM_DEV_ARM_VGIC_CTRL_INIT),
                 0,

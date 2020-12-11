@@ -702,7 +702,10 @@ pub struct DeviceManager {
     interrupt_controller: Option<Arc<Mutex<gic::Gic>>>,
 
     #[cfg(target_arch = "aarch64")]
-    gic_device_entity: Option<Arc<Mutex<Box<dyn GICDevice>>>>,
+    gicv3_device_entity: Option<Arc<Mutex<Box<dyn GICDevice>>>>,
+
+    #[cfg(target_arch = "aarch64")]
+    gicv3_its_device_entity: Option<Arc<Mutex<Box<dyn GICDevice>>>>,
 
     // Things to be added to the commandline (i.e. for virtio-mmio)
     cmdline_additions: Vec<String>,
@@ -817,7 +820,9 @@ impl DeviceManager {
             console: Arc::new(Console::default()),
             interrupt_controller: None,
             #[cfg(target_arch = "aarch64")]
-            gic_device_entity: None,
+            gicv3_device_entity: None,
+            #[cfg(target_arch = "aarch64")]
+            gicv3_its_device_entity: None,
             cmdline_additions: Vec::new(),
             #[cfg(feature = "acpi")]
             ged_notification_device: None,
@@ -1077,14 +1082,25 @@ impl DeviceManager {
     }
 
     #[cfg(target_arch = "aarch64")]
-    pub fn set_gic_device_entity(&mut self, device_entity: Arc<Mutex<Box<dyn GICDevice>>>) {
-        self.gic_device_entity = Some(device_entity);
+    pub fn set_gicv3_device_entity(&mut self, device_entity: Arc<Mutex<Box<dyn GICDevice>>>) {
+        self.gicv3_device_entity = Some(device_entity);
     }
 
     #[cfg(target_arch = "aarch64")]
-    pub fn get_gic_device_entity(&self) -> Option<&Arc<Mutex<Box<dyn GICDevice>>>> {
-        self.gic_device_entity.as_ref()
+    pub fn get_gicv3_device_entity(&self) -> Option<&Arc<Mutex<Box<dyn GICDevice>>>> {
+        self.gicv3_device_entity.as_ref()
     }
+
+    #[cfg(target_arch = "aarch64")]
+    pub fn set_gicv3_its_device_entity(&mut self, device_entity: Arc<Mutex<Box<dyn GICDevice>>>) {
+        self.gicv3_its_device_entity = Some(device_entity);
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    pub fn get_gicv3_its_device_entity(&self) -> Option<&Arc<Mutex<Box<dyn GICDevice>>>> {
+        self.gicv3_its_device_entity.as_ref()
+    }
+
     #[cfg(target_arch = "aarch64")]
     pub fn construct_gicr_typers(&self, vcpu_states: &[CpuState]) {
         /* Pre-construct the GICR_TYPER:
@@ -1114,7 +1130,7 @@ impl DeviceManager {
             gicr_typers.push((cpu_affid << 32) | (1 << 24) | (index as u64) << 8 | (last << 4));
         }
 
-        self.get_gic_device_entity()
+        self.get_gicv3_device_entity()
             .unwrap()
             .lock()
             .unwrap()
