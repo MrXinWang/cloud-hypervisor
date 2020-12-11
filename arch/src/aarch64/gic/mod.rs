@@ -150,8 +150,7 @@ pub mod kvm {
         fn finalize_device(gic_device_object: &dyn GICDevice) -> Result<()>;
     }
 
-    /// Create a GICv3-ITS device.
-    ///
+    /// Create the GICv3 and the GICv3ITS device.
     pub fn create_gic(
         vm: &Arc<dyn hypervisor::Vm>,
         vcpu_count: u64,
@@ -169,11 +168,13 @@ pub mod kvm {
             vcpu_count,
         );
 
+        /*
         KvmGICv3::init_device_attributes(&*gicv3_device_obj)?;
         KvmGICv3ITS::init_device_attributes(&*gicv3_its_device_obj)?;
 
         KvmGICv3ITS::finalize_device(&*gicv3_its_device_obj)?;
         KvmGICv3::finalize_device(&*gicv3_device_obj)?;
+        */
 
         Ok((gicv3_device_obj, gicv3_its_device_obj))
     }

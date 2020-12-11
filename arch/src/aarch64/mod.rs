@@ -12,8 +12,11 @@ pub mod layout;
 pub mod regs;
 
 pub use self::fdt::DeviceInfoForFDT;
+use crate::aarch64::gic::gicv3::kvm::KvmGICv3;
+use crate::aarch64::gic::gicv3_its::kvm::KvmGICv3ITS;
 use crate::DeviceType;
 use crate::RegionType;
+use aarch64::gic::kvm::KvmGICDevice;
 use aarch64::gic::GICDevice;
 use std::collections::HashMap;
 use std::ffi::CStr;
@@ -30,8 +33,14 @@ pub enum Error {
     /// Failed to create a FDT.
     SetupFDT(fdt::Error),
 
-    /// Failed to create a GIC.
-    SetupGIC(gic::Error),
+    /// Failed to create GIC.
+    CreateGIC(gic::Error),
+
+    /// Failed to init GIC.
+    InitGIC(gic::Error),
+
+    /// Failed to finalize GIC initialization.
+    FinalizeGIC(gic::Error),
 
     /// Failed to compute the initramfs address.
     InitramfsAddress,
@@ -129,7 +138,13 @@ pub fn configure_system<T: DeviceInfoForFDT + Clone + Debug, S: ::std::hash::Bui
     pci_space_address: &(u64, u64),
 ) -> super::Result<(Box<dyn GICDevice>, Box<dyn GICDevice>)> {
     let (gicv3_device, gicv3_its_device) =
-        gic::kvm::create_gic(vm, vcpu_count).map_err(Error::SetupGIC)?;
+        gic::kvm::create_gic(vm, vcpu_count).map_err(Error::CreateGIC)?;
+
+    KvmGICv3::init_device_attributes(&*gicv3_device).map_err(Error::InitGIC)?;
+    KvmGICv3ITS::init_device_attributes(&*gicv3_its_device).map_err(Error::InitGIC)?;
+
+    KvmGICv3ITS::finalize_device(&*gicv3_its_device).map_err(Error::FinalizeGIC)?;
+    KvmGICv3::finalize_device(&*gicv3_device).map_err(Error::FinalizeGIC)?;
 
     fdt::create_fdt(
         guest_mem,
