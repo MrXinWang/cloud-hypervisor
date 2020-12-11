@@ -82,6 +82,8 @@ use vmm_sys_util::terminal::Terminal;
 #[cfg(target_arch = "aarch64")]
 use arch::aarch64::gic::gicv3::kvm::{KvmGICv3, GIC_V3_SNAPSHOT_ID};
 #[cfg(target_arch = "aarch64")]
+use arch::aarch64::gic::gicv3_its::kvm::{KvmGICv3ITS, GIC_V3_ITS_SNAPSHOT_ID};
+#[cfg(target_arch = "aarch64")]
 use arch::aarch64::gic::kvm::create_gic;
 
 // 64 bit direct boot entry offset for bzImage
@@ -1584,6 +1586,20 @@ impl Vm {
                 .snapshot()?,
         );
 
+        vm_snapshot.add_snapshot(
+            self.device_manager
+                .lock()
+                .unwrap()
+                .get_gicv3_its_device_entity()
+                .unwrap()
+                .lock()
+                .unwrap()
+                .as_any_concrete_mut()
+                .downcast_mut::<KvmGICv3ITS>()
+                .unwrap()
+                .snapshot()?,
+        );
+
         Ok(())
     }
 
@@ -1639,6 +1655,7 @@ impl Vm {
             return Err(MigratableError::Restore(anyhow!("Missing GICv3 snapshot")));
         }
 
+        /*
         self.device_manager
             .lock()
             .unwrap()
@@ -1649,6 +1666,7 @@ impl Vm {
                     e
                 ))
             })?;
+        */
 
         Ok(())
     }
@@ -1879,6 +1897,7 @@ impl Snapshottable for Vm {
             )));
         }
 
+        // Restore the device_manager
         if let Some(device_manager_snapshot) = snapshot.snapshots.get(DEVICE_MANAGER_SNAPSHOT_ID) {
             self.device_manager
                 .lock()
@@ -1890,8 +1909,38 @@ impl Snapshottable for Vm {
             )));
         }
 
+        // Create devices
+        self.device_manager
+            .lock()
+            .unwrap()
+            .create_devices()
+            .map_err(|e| MigratableError::Restore(anyhow!("Could not create devices {:?}", e)))?;
+
+        // Restore devices
+        if let Some(device_manager_snapshot) = snapshot.snapshots.get(DEVICE_MANAGER_SNAPSHOT_ID) {
+            self.device_manager
+                .lock()
+                .unwrap()
+                .restore_devices(*device_manager_snapshot.clone())?;
+        } else {
+            return Err(MigratableError::Restore(anyhow!(
+                "Missing device manager snapshot"
+            )));
+        }
+
         #[cfg(target_arch = "aarch64")]
         self.restore_vgic_and_enable_interrupt(&snapshot)?;
+
+        self.device_manager
+            .lock()
+            .unwrap()
+            .enable_interrupt_controller()
+            .map_err(|e| {
+                MigratableError::Restore(anyhow!(
+                    "Could not enable interrupt controller routing: {:#?}",
+                    e
+                ))
+            })?;
 
         // Now we can start all vCPUs from here.
         self.cpu_manager

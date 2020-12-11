@@ -191,4 +191,57 @@ pub mod kvm {
         gic.set_device_attr(&init_gic_attr)
             .map_err(super::Error::SetDeviceAttribute)
     }
+
+    pub fn gicv3_its_attr_access(
+        gicv3_its: &Arc<dyn hypervisor::Device>,
+        group: u32,
+        attr: u32,
+        val: &u64,
+        set: bool,
+    ) -> Result<()> {
+        let mut gicv3_its_attr = kvm_bindings::kvm_device_attr {
+            group,
+            attr: attr as u64,
+            addr: val as *const u64 as u64,
+            flags: 0,
+        };
+        if set {
+            gicv3_its
+                .set_device_attr(&gicv3_its_attr)
+                .map_err(super::Error::SetDeviceAttribute)?;
+        } else {
+            gicv3_its
+                .get_device_attr(&mut gicv3_its_attr)
+                .map_err(super::Error::GetDeviceAttribute)?;
+        }
+        Ok(())
+    }
+
+    /// Function that saves ITS tables into guest RAM.
+    ///
+    /// The tables get flushed to guest RAM whenever the VM gets stopped.
+    pub fn save_its_tables(gicv3_its: &Arc<dyn hypervisor::Device>) -> Result<()> {
+        let init_gic_attr = kvm_bindings::kvm_device_attr {
+            group: kvm_bindings::KVM_DEV_ARM_VGIC_GRP_CTRL,
+            attr: u64::from(kvm_bindings::KVM_DEV_ARM_ITS_SAVE_TABLES),
+            addr: 0,
+            flags: 0,
+        };
+        gicv3_its
+            .set_device_attr(&init_gic_attr)
+            .map_err(super::Error::SetDeviceAttribute)
+    }
+
+    /// Function that restores ITS tables into guest RAM.
+    pub fn restore_its_tables(gicv3_its: &Arc<dyn hypervisor::Device>) -> Result<()> {
+        let init_gic_attr = kvm_bindings::kvm_device_attr {
+            group: kvm_bindings::KVM_DEV_ARM_VGIC_GRP_CTRL,
+            attr: u64::from(kvm_bindings::KVM_DEV_ARM_ITS_RESTORE_TABLES),
+            addr: 0,
+            flags: 0,
+        };
+        gicv3_its
+            .set_device_attr(&init_gic_attr)
+            .map_err(super::Error::SetDeviceAttribute)
+    }
 }
