@@ -47,6 +47,7 @@ use vm_memory::GuestAddress;
 
 /// Below this address will reside the GIC, above this address will reside the MMIO devices.
 pub const MAPPED_IO_START: u64 = 0x0900_0000;
+pub const GIC_DEV_BASE_ADDR: u64 = 0x0000_0000;
 
 /// Space 0x0900_0000 ~ 0x1000_0000 is reserved for legacy devices.
 pub const LEGACY_SERIAL_MAPPED_IO_START: u64 = 0x0900_0000;

@@ -80,7 +80,8 @@ pub mod kvm {
 
         /// Get the address of the GIC distributor.
         pub fn get_dist_addr() -> u64 {
-            layout::MAPPED_IO_START - KvmGICv3::KVM_VGIC_V3_DIST_SIZE
+            //layout::MAPPED_IO_START - KvmGICv3::KVM_VGIC_V3_DIST_SIZE
+            layout::GIC_DEV_BASE_ADDR + KvmGICv3::KVM_VGIC_V3_DIST_SIZE
         }
 
         /// Get the size of the GIC distributor.
@@ -90,7 +91,8 @@ pub mod kvm {
 
         /// Get the address of the GIC redistributors.
         pub fn get_redists_addr(vcpu_count: u64) -> u64 {
-            KvmGICv3::get_dist_addr() - KvmGICv3::get_redists_size(vcpu_count)
+            //KvmGICv3::get_dist_addr() - KvmGICv3::get_redists_size(vcpu_count)
+            KvmGICv3::get_dist_addr() + KvmGICv3::get_redists_size(vcpu_count)
         }
 
         /// Get the size of the GIC redistributors.
@@ -201,9 +203,7 @@ pub mod kvm {
         fn init_device_attributes(
             gic_device_object: &dyn GICDevice,
         ) -> crate::aarch64::gic::Result<()> {
-            /* Setting up the distributor attribute.
-             We are placing the GIC below 1GB so we need to substract the size of the distributor.
-            */
+            // Setting up the distributor attribute.
             Self::set_device_attribute(
                 gic_device_object.device(),
                 kvm_bindings::KVM_DEV_ARM_VGIC_GRP_ADDR,

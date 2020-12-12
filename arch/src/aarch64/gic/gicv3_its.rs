@@ -98,7 +98,8 @@ pub mod kvm {
         }
 
         fn get_msi_addr(vcpu_count: u64) -> u64 {
-            KvmGICv3::get_redists_addr(vcpu_count) - KvmGICv3ITS::get_msi_size()
+            //KvmGICv3::get_redists_addr(vcpu_count) - KvmGICv3ITS::get_msi_size()
+            KvmGICv3::get_redists_addr(vcpu_count) + KvmGICv3ITS::get_msi_size()
         }
 
         /// Save the state of GICv3ITS.
@@ -290,7 +291,7 @@ pub mod kvm {
                 .map_err(Error::RestoreITSBASER)?;
             }
 
-            //restore_its_tables(&self.its_device().unwrap()).map_err(Error::RestoreITSTables)?;
+            restore_its_tables(&self.its_device().unwrap()).map_err(Error::RestoreITSTables)?;
 
             debug!("=====RESTORE: its_ctlr_state={:#?}=====", &state.its_ctlr);
             gicv3_its_attr_access(
