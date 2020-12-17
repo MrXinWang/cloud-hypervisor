@@ -1701,6 +1701,7 @@ impl Vm {
         )
         .map_err(|e| MigratableError::Restore(anyhow!("Failed to finalize GICv3 {:?}", e)))?;
 
+        /*
         if let Some(device_manager_snapshot) = vm_snapshot.snapshots.get(DEVICE_MANAGER_SNAPSHOT_ID)
         {
             self.device_manager
@@ -1712,6 +1713,7 @@ impl Vm {
                 "Missing device manager snapshot"
             )));
         }
+        */
 
         // Restore the GICv3 states.
         if let Some(gicv3_snapshot) = vm_snapshot.snapshots.get(GIC_V3_SNAPSHOT_ID) {
@@ -2025,8 +2027,8 @@ impl Snapshottable for Vm {
             )));
         }
 
-        //#[cfg(target_arch = "aarch64")]
-        //self.create_gic_and_restore_gicv3(&snapshot)?;
+        #[cfg(target_arch = "aarch64")]
+        self.create_and_restore_gic(&snapshot)?;
 
         // Restore the device_manager
         if let Some(device_manager_snapshot) = snapshot.snapshots.get(DEVICE_MANAGER_SNAPSHOT_ID) {
@@ -2047,8 +2049,8 @@ impl Snapshottable for Vm {
             .create_devices()
             .map_err(|e| MigratableError::Restore(anyhow!("Could not create devices {:?}", e)))?;
 
-        #[cfg(target_arch = "aarch64")]
-        self.create_and_restore_gic(&snapshot)?;
+        //#[cfg(target_arch = "aarch64")]
+        //self.create_and_restore_gic(&snapshot)?;
 
         /*
         self.device_manager
@@ -2062,7 +2064,6 @@ impl Snapshottable for Vm {
                 ))
             })?;
         */
-        /*
         // Restore devices
         if let Some(device_manager_snapshot) = snapshot.snapshots.get(DEVICE_MANAGER_SNAPSHOT_ID) {
             self.device_manager
@@ -2074,8 +2075,9 @@ impl Snapshottable for Vm {
                 "Missing device manager snapshot"
             )));
         }
-        */
 
+        //#[cfg(target_arch = "aarch64")]
+        //self.create_and_restore_gic(&snapshot)?;
         /*
                 KvmGICv3ITS::init_device_attributes(
                     self.device_manager
@@ -2179,7 +2181,7 @@ impl Snapshottable for Vm {
         KvmGICv3::finalize_device(&*gicv3_device)
             .map_err(|e| MigratableError::Restore(anyhow!("Failed to finalize GICv3 {:?}", e)))?;
         */
-
+        debug!("=====YOOOOOO====");
         self.device_manager
             .lock()
             .unwrap()
@@ -2190,7 +2192,6 @@ impl Snapshottable for Vm {
                     e
                 ))
             })?;
-
         // Now we can start all vCPUs from here.
         self.cpu_manager
             .lock()
