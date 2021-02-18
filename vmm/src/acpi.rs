@@ -267,6 +267,10 @@ pub fn create_acpi_tables(
     #[cfg(target_arch = "x86_64")]
     facp.write(128, 1u8);
 
+    // ARM_BOOT_ARCH: enable PSCI with HVC enable-method
+    #[cfg(target_arch = "aarch64")]
+    facp.write(129, 3u16);
+
     facp.write(131, 3u8); // FADT minor version
     facp.write(140, dsdt_offset.0); // X_DSDT
 
