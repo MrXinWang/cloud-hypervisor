@@ -107,7 +107,7 @@ update_workloads() {
     }
 
     SRCDIR=$PWD
-    LINUX_CUSTOM_BRANCH="ch-5.10.6"
+    LINUX_CUSTOM_BRANCH="clh-virtio-fs-virtio-iommu-5.8-rc4"
 
     # Check whether the local HEAD commit same as the remote HEAD or not. Remove the folder if they are different.
     if [ -d "$LINUX_CUSTOM_DIR" ]; then
@@ -122,7 +122,8 @@ update_workloads() {
     fi
 
     if [ ! -d "$LINUX_CUSTOM_DIR" ]; then
-        time git clone --depth 1 "https://github.com/cloud-hypervisor/linux.git" -b $LINUX_CUSTOM_BRANCH $LINUX_CUSTOM_DIR
+        # Temporary test
+        time git clone --depth 1 "https://github.com/michael2012z/myLinux.git" -b $LINUX_CUSTOM_BRANCH $LINUX_CUSTOM_DIR
     fi
 
     cp $SRCDIR/resources/linux-config-aarch64 $LINUX_CUSTOM_DIR/.config
